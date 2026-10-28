@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Wargame AR — Portée 3 pouces</title>
+<style>
+body{margin:0;background:#10151c;color:#fff;font-family:system-ui,sans-serif}#panel{position:fixed;z-index:10;top:0;left:0;right:0;padding:12px;background:#10151cdd;display:flex;align-items:center;gap:8px;flex-wrap:wrap}button,select{font-size:16px;padding:9px;border:0;border-radius:8px}button{background:#91e8d4;color:#10251f;font-weight:700}#status{font-size:13px;width:100%;color:#ddd}#info{position:fixed;z-index:5;bottom:14px;left:12px;right:12px;text-align:center;background:#10151caa;padding:10px;border-radius:9px;pointer-events:none}#reticle{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:16px;height:16px;border:2px solid #91e8d4;border-radius:50%;pointer-events:none;display:none}canvas{display:block}
+</style>
+</head>
+<body>
+<div id="panel"><button id="start">Démarrer AR</button><label>Socle <select id="base"><option value="25">25 mm</option><option value="32" selected>32 mm</option><option value="40">40 mm</option><option value="50">50 mm</option></select></label><button id="clear">Effacer</button><div id="status">Ouvre cette page sur Chrome Android, via HTTPS.</div></div>
+<div id="reticle"></div><div id="info">Vise le centre du socle, puis touche l'écran pour placer le cercle.</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
+const status=document.querySelector('#status'),start=document.querySelector('#start'),base=document.querySelector('#base'),reticle=document.querySelector('#reticle');
+const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera();
+const renderer=new THREE.WebGLRenderer({alpha:true,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.xr.enabled=true;document.body.appendChild(renderer.domElement);
+const rings=[];let session=null,viewerSpace=null,hitTestSource=null,hitMatrix=new THREE.Matrix4(),hasHit=false;
+const marker=new THREE.Mesh(new THREE.RingGeometry(.012,.014,48),new THREE.MeshBasicMaterial({color:0x91e8d4,side:THREE.DoubleSide,depthTest:false}));marker.rotation.x=-Math.PI/2;marker.visible=false;scene.add(marker);
+function makeRing(position){const radius=.0762+Number(base.value)/2000;const geo=new THREE.RingGeometry(radius-.002,radius+.002,128);const mat=new THREE.MeshBasicMaterial({color:0x00ff99,side:THREE.DoubleSide,transparent:true,opacity:.95,depthTest:false});const mesh=new THREE.Mesh(geo,mat);mesh.rotation.x=-Math.PI/2;mesh.position.copy(position);mesh.position.y+=.004;scene.add(mesh);rings.push(mesh);status.textContent=`Cercle posé : 3″ depuis le bord du socle ${base.value} mm.`;}
+function clear(){for(const ring of rings){scene.remove(ring);ring.geometry.dispose();ring.material.dispose()}rings.length=0;}
+document.querySelector('#clear').onclick=clear;
+async function begin(){if(!navigator.xr){status.textContent='WebXR indisponible : utilise Chrome Android avec ARCore.';return}try{const ok=await navigator.xr.isSessionSupported('immersive-ar');if(!ok){status.textContent='AR immersive non prise en charge sur cet appareil/navigateur.';return}session=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['hit-test'],optionalFeatures:['dom-overlay'],domOverlay:{root:document.body}});renderer.xr.setReferenceSpaceType('local');await renderer.xr.setSession(session);viewerSpace=await session.requestReferenceSpace('viewer');hitTestSource=await session.requestHitTestSource({space:viewerSpace});reticle.style.display='block';start.textContent='AR active';start.disabled=true;status.textContent='Balaye doucement la table pour détecter son plan.';session.addEventListener('end',()=>{session=null;hasHit=false;marker.visible=false;reticle.style.display='none';start.disabled=false;start.textContent='Démarrer AR';status.textContent='Session terminée.'});}catch(e){status.textContent='Échec du démarrage AR : '+e.message;}}
+start.onclick=begin;
+function place(){if(session&&hasHit){const p=new THREE.Vector3().setFromMatrixPosition(hitMatrix);makeRing(p)}}
+renderer.domElement.addEventListener('click',place);document.querySelector('#info').addEventListener('click',place);
+// DOM overlay: a tap outside controls is treated as a placement request.
+document.body.addEventListener('click',e=>{if(e.target.closest('#panel'))return;if(e.target!==renderer.domElement&&e.target!==document.querySelector('#info'))place()});
+renderer.setAnimationLoop((t,frame)=>{if(frame&&session&&hitTestSource){const referenceSpace=renderer.xr.getReferenceSpace();const hits=frame.getHitTestResults(hitTestSource);hasHit=hits.length>0;if(hasHit){const pose=hits[0].getPose(referenceSpace);hitMatrix.fromArray(pose.transform.matrix);marker.position.setFromMatrixPosition(hitMatrix);marker.position.y+=.003;marker.visible=true}else marker.visible=false;}renderer.render(scene,camera)});
+window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body></html>
